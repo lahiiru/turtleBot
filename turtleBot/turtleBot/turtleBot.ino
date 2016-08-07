@@ -1,119 +1,113 @@
-
-#include <WiFiUdp.h>
-#include <WiFiServer.h>
-#include <WiFiClientSecure.h>
-#include <WiFiClient.h>
-#include <ESP8266WiFiType.h>
-#include <ESP8266WiFiSTA.h>
-#include <ESP8266WiFiScan.h>
+#include <WebSocketsServer.h>
 #include <ESP8266WiFiMulti.h>
-#include <ESP8266WiFiGeneric.h>
-#include <ESP8266WiFiAP.h>
-#include <ESP8266WiFi.h>
 #include <Servo.h>
-
+#include <Math.h>
 
 #define DEBUG true
 #define pin_led D4
 #define pin_left_servo D6
 #define pin_right_servo D7
-#define max_radius 500
+#define max_radius 1000
+#define max_speed 500
 #define MAX_SRV_CLIENTS 2
 #define PORT 80
+#define DEBUG_SERIAL Serial
+#define COMPASS_FACTOR 45.0  //when z equals to this, speed of one wheel becomes zero (rotate about the tyre)
 
-const char* MY_SSID = "turtleBot";
-const char* MY_PWD = "ttlbot123";
-const char* ssid = "NO FREE";
-const char* password = "a92*eRrA9$";
+unsigned long t_blink;
+bool s_blink;
+String inString = "";
+byte parse_i = 0;
 
-WiFiServer server(PORT);
-WiFiClient serverClients[MAX_SRV_CLIENTS];
+void blink(int d_blink) {
+	if (millis() - t_blink > d_blink) {
+		t_blink = millis();
+		digitalWrite(pin_led, s_blink);
+		s_blink = !s_blink;
+	}
+}
 
 class Communicator {
+private:
+	const char* MY_SSID = "turtleBot";
+	const char* MY_PWD = "ttlbot123";
+	const char* ssid = "RoboServer";
+	const char* password = "124567890";
+	const char* host = "remote";
+	ESP8266WiFiMulti WiFiMulti;
+	static WebSocketsServer* webSocket;
 public:
 	IPAddress myIP;
+	static String inBuffer;
+	static String outBuffer;
+	static void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght) {
+		switch (type) {
+		case WStype_DISCONNECTED:
+			DEBUG_SERIAL.printf("[%u] Disconnected!\n", num);
+			break;
+		case WStype_CONNECTED:
+		{
+			IPAddress ip = { 192,168,4,104 };//webSocket.remoteIP(num);
+			DEBUG_SERIAL.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
 
-	void initAP() {
-		WiFi.softAP(MY_SSID, MY_PWD);
-		myIP = WiFi.softAPIP();
-		Serial.print("AP IP address: ");
-		Serial.println(myIP);
+			// send message to client
+			Communicator::webSocket->sendTXT(num, "Connected");
+		}
+		break;
+		case WStype_TEXT:
+			DEBUG_SERIAL.printf("[%u] get Text: %s\n", num, payload);
+			Communicator::inBuffer = String((char *)payload);
+			// send message to client
+			// webSocket.sendTXT(num, "message here");
+
+			// send data to all connected clients
+			// this->webSocket.broadcastTXT("message here");
+			break;
+		case WStype_BIN:
+			DEBUG_SERIAL.printf("[%u] get binary lenght: %u\n", num, lenght);
+			hexdump(payload, lenght);
+			// send message to client
+			// this->webSocket.sendBIN(num, payload, lenght);
+			break;
+		}
 	}
 
 	uint8_t init() {
-		WiFi.begin(ssid, password);
-		Serial.print("\nConnecting to "); Serial.println(ssid);
-		uint8_t i = 0;
-		while (WiFi.status() != WL_CONNECTED && i++ < 20) delay(500);    // if error occured retry to connect
-		if (i == 21) {
-			Serial.print("Could not connect to "); Serial.println(ssid);
-			return server.status();
-		}
-		//start the server
-		server.begin();
-		server.setNoDelay(true);
-		myIP = WiFi.localIP();
+		Communicator::inBuffer = "";
+		Communicator::outBuffer = "";
+		DEBUG_SERIAL.setDebugOutput(true);
 
-		Serial.print("Ready! Use 'telnet ");
-		Serial.print(myIP.toString());
-		Serial.print(" "); Serial.print(PORT); Serial.println("' to connect");
+		DEBUG_SERIAL.println();
+		DEBUG_SERIAL.println();
+		DEBUG_SERIAL.println();
+
+		for (uint8_t t = 4; t > 0; t--) {
+			DEBUG_SERIAL.printf("[SETUP] BOOT WAIT %d...\n", t);
+			DEBUG_SERIAL.flush();
+			delay(1000);
+		}
+		this->WiFiMulti.addAP("RoboServer", "1234567890");
+
+		while (WiFiMulti.run() != WL_CONNECTED) {
+			blink(100);
+			delay(1);
+		}
+		Communicator::webSocket = new WebSocketsServer(80);
+		Communicator::webSocket->begin();
+		Communicator::webSocket->onEvent(webSocketEvent);
 
 		return WL_CONNECTED;
 	}
-
 	void processCommunication() {
-		this->acceptClients();
-		this->RX();
-		this->TX();
-	}
-
-private:
-	void acceptClients() {
-		//check if there are any new clients
-		if (server.hasClient()) {
-			for (uint8_t i = 0; i < MAX_SRV_CLIENTS; i++) {
-				//find free/disconnected spot
-				if (!serverClients[i] || !serverClients[i].connected()) {
-					if (serverClients[i]) serverClients[i].stop();
-					serverClients[i] = server.available();
-					Serial.print("New client: "); Serial.print(i);
-					continue;
-				}
-			}
-			//no free/disconnected spot so reject
-			WiFiClient serverClient = server.available();
-			serverClient.stop();
+		if (Communicator::outBuffer.length()>0) {
+			DEBUG_SERIAL.println("Pushing from buffer...");
+			Communicator::webSocket->sendTXT(0, Communicator::outBuffer);
+			Communicator::outBuffer = "";
 		}
-	}
-
-	void RX() {
-		//check clients for data
-		for (uint8_t i = 0; i < MAX_SRV_CLIENTS; i++) {
-			if (serverClients[i] && serverClients[i].connected()) {
-				if (serverClients[i].available()) {
-					//get data from the telnet client and push it to the UART
-					while (serverClients[i].available()) Serial.write(serverClients[i].read());
-				}
-			}
-		}
-	}
-
-	void TX() {
-		//check UART for data
-		if (Serial.available()) {
-			size_t len = Serial.available();
-			uint8_t sbuf[len];
-			Serial.readBytes(sbuf, len);
-			//push UART data to all connected telnet clients
-			for (uint8_t i = 0; i < MAX_SRV_CLIENTS; i++) {
-				if (serverClients[i] && serverClients[i].connected()) {
-					serverClients[i].write(sbuf, len);
-					delay(1);
-				}
-			}
-		}
+		Communicator::webSocket->loop();
 	}
 };
+
 
 class Rover {
 public:
@@ -126,7 +120,7 @@ public:
 		servor.attach(pin_right_servo);
 	}
 	void stop() {
-		speed_c = 0;
+		this->speed_c = 0;
 		this->drive();
 	}
 	void accelerate(int speed) {
@@ -134,8 +128,12 @@ public:
 		this->drive();
 	}
 	void steer(int radius) {
-		this->z = radius / 100.0;
+		this->z = radius / COMPASS_FACTOR * 2;
 		this->drive();
+	}
+	void printWheels() {
+		Serial.println("Wheel speeds,");
+		Serial.printf("{%i}={%i}.\n", left_c, right_c);
 	}
 private:
 	Servo servol;
@@ -145,60 +143,66 @@ private:
 	int speed_c;
 	float z = 0.0;
 	void drive() {
-		if (z < 0) { // turning left
-			z = z*-1;
+		float _z = this->z;
+		if (_z < 0) { // turning left
+			_z = _z*-1;
 			right_c = speed_c;
-			left_c = (z<max_radius) ? (int)(right_c * (z - 0.5) / (z + 0.5)) : speed_c;
+			left_c = (_z<max_radius / COMPASS_FACTOR * 2) ? (int)(right_c * (_z - 0.5) / (_z + 0.5)) : speed_c;
 		}
 		else {  // turning right
 			left_c = speed_c;
-			right_c = (z<max_radius) ? (int)(left_c * (z - 0.5) / (z + 0.5)) : speed_c;
-			Serial.println((int)(left_c * (z - 0.5) / (z + 0.5)));
+			right_c = (_z<max_radius / COMPASS_FACTOR * 2) ? (int)(left_c * (_z - 0.5) / (_z + 0.5)) : speed_c;
 		}
-		servol.write(map(left_c, -500, 500, 0, 180));
-		Serial.println(right_c);
-		servor.write(180 - map(right_c, -500, 500, 0, 180));
+		servol.write(7 + map(left_c, -1 * max_speed, max_speed, 0, 180));
+		servor.write(180 + 5 - map(right_c, -1 * max_speed, max_speed, 0, 180));
 	}
-
 };
 
-unsigned long t_blink;
-bool s_blink;
-String inString = "";
 Rover *myRover;
 Communicator *myCommunicator;
+WebSocketsServer *Communicator::webSocket;
+String Communicator::inBuffer;
+String Communicator::outBuffer;
 
-void setup() {
-	pinMode(pin_led, OUTPUT);
-	pinMode(pin_left_servo, OUTPUT);
-	pinMode(pin_right_servo, OUTPUT);
-	Serial.begin(115200);
-	myCommunicator = new Communicator();
-	Serial.println("Stariting communicator...");
-	uint8_t s = myCommunicator->init();
-	if (s != WL_CONNECTED) {
-		Serial.println(s);
-		Serial.println("Couldn't connect. Will restart after 1 min.");
-		unsigned long t = millis();
-		while (true)
-		{
-			blink(100);							// quick blinks to indicate the error
-			if (millis() - t > 600000) {
-				ESP.restart();					// restart the CPU after 60 seconds
-			}
-
-		}
-	}
-	Serial.println("Communicater started.");
-	myRover = new Rover();
-	myRover->accelerate(500);
+void exec(int z, int s) {
+	myRover->steer(z);
+	myRover->accelerate(s);
+	myRover->printWheels();
 }
 
-void loop() {
-	blink(1000);
-	processSerial();
-	myCommunicator->processCommunication();
-	delay(10);              // wait for a second
+void parseInBuffer() {
+	if (Communicator::inBuffer.length()>0) {
+		String in = Communicator::inBuffer;
+		Communicator::inBuffer = "";
+		char* c = new char[6];
+		in.toCharArray(c, 6);
+		// x=r.cos(A), y=r.sin(A), r=50 (as javascript gives max r=100)
+		int x = (c[1] - 70); // [-50,50]
+		int y = (c[2] - 70);
+		int y_sign = y == 0 ? 1 : y / abs(y);
+		int x_sign = x == 0 ? 1 : x / abs(x);
+
+		x = abs(x);
+		y = abs(y);
+
+		int speed_c = sqrt(x*x + y*y)*max_speed / 50.0;
+		// y/x=tan(A)=m
+		float m = 1.0f*y / (x + 0.01f);
+		float z = 10 + (m - (tan(0.1))) / (1 + m*tan(0.1)) * 100;
+		float A = atan(m)*57.29578;
+		DEBUG_SERIAL.println("calculated values: speed,m,A,z");
+		DEBUG_SERIAL.println(speed_c*y_sign);
+		DEBUG_SERIAL.println(m);
+		DEBUG_SERIAL.println(A);
+		DEBUG_SERIAL.println((int)z*x_sign);
+		DEBUG_SERIAL.println("wheel values,");
+		exec((int)z*x_sign, speed_c*y_sign);
+		DEBUG_SERIAL.println("parsed.");
+		DEBUG_SERIAL.println((int)(c[1] - 70) * 2);
+		DEBUG_SERIAL.println((int)(c[2] - 70) * 2);
+		DEBUG_SERIAL.println((int)((c[3] - 20)*360.0 / 100) - 90);
+		DEBUG_SERIAL.println((int)c[4]);
+	}
 }
 
 void processSerial() {
@@ -214,21 +218,53 @@ void processSerial() {
 		if (inChar == '\n') {
 			Serial.print("Value:");
 			Serial.println(inString.toInt());
-			exec(inString.toInt());
+			exec(inString.toInt(), max_speed);
+			Communicator::outBuffer = inString;
 			// clear the string for new input:
 			inString = "";
 		}
 	}
 }
 
-void exec(int i) {
-	myRover->steer(i);
+void setup() {
+	pinMode(pin_led, OUTPUT);
+	pinMode(pin_left_servo, OUTPUT);
+	pinMode(pin_right_servo, OUTPUT);
+	Serial.begin(115200);
+	SPIFFS.begin();
+	{
+		Dir dir = SPIFFS.openDir("/");
+	}
+
+	Serial.println("FS started.");
+
+	myCommunicator = new Communicator();
+	Serial.println("Stariting communicator...");
+	uint8_t s = myCommunicator->init();
+	if (s != WL_CONNECTED) {
+		Serial.println(s);
+		Serial.println("Couldn't connect. Will restart after 1 min.");
+		unsigned long t = millis();
+		while (true)
+		{
+			blink(100);             // quick blinks to indicate the error
+			if (millis() - t > 600000) {
+				ESP.restart();          // restart the CPU after 60 seconds
+			}
+
+		}
+	}
+
+	Serial.println("Communicater started.");
+
+	myRover = new Rover();
+	myRover->accelerate(0);
 }
 
-void blink(int d_blink) {
-	if (millis() - t_blink > d_blink) {
-		t_blink = millis();
-		digitalWrite(pin_led, s_blink);
-		s_blink = !s_blink;
-	}
+void loop() {
+	blink(1000);
+	processSerial();
+	myCommunicator->processCommunication();
+	parseInBuffer();
+	delay(10);              // wait for a second
 }
