@@ -1,3 +1,4 @@
+#include <FS.h>
 #include <WebSocketsServer.h>
 #include <ESP8266WiFiMulti.h>
 #include <Servo.h>
@@ -27,6 +28,39 @@ void blink(int d_blink) {
 	}
 }
 
+class MyWSServer : public WebSocketsServer {
+public:
+	MyWSServer(uint16_t port) :WebSocketsServer(port) {}
+	virtual void handleNonWebsocketConnection(WSclient_t * client) override {
+		DEBUG_WEBSOCKETS("[WS-Server][%d][handleHeader] no Websocket connection close.\n", client->num);
+		String resp = "HTTP/1.1 200 OK\r\nServer: arduino-WebSocket-Server\r\nContent-Type: text/html\r\nContent-Length: 10852\r\nKeep-Alive: timeout=5, max=100Connection: Keep-Alive\r\n\r\n";
+		String path = "/index.htm";
+		if (path.endsWith("/")) path += "index.htm";
+		if (SPIFFS.exists(path)) {
+			File file = SPIFFS.open(path, "r");
+			resp += file.readString();
+			sendContent(resp, client);
+		}
+		clientDisconnect(client);
+	}
+private:
+	void sendContent(const String& content, WSclient_t * _currentClient) {
+		const size_t unit_size = 1460;
+		size_t size_to_send = content.length();
+		const char* send_start = content.c_str();
+
+		while (size_to_send) {
+			size_t will_send = (size_to_send < unit_size) ? size_to_send : unit_size;
+			size_t sent = _currentClient->tcp->write(send_start, will_send);
+			if (sent == 0) {
+				break;
+			}
+			size_to_send -= sent;
+			send_start += sent;
+		}
+	}
+};
+
 class Communicator {
 private:
 	const char* MY_SSID = "turtleBot";
@@ -35,7 +69,7 @@ private:
 	const char* password = "124567890";
 	const char* host = "remote";
 	ESP8266WiFiMulti WiFiMulti;
-	static WebSocketsServer* webSocket;
+	static MyWSServer* webSocket;
 public:
 	IPAddress myIP;
 	static String inBuffer;
@@ -92,7 +126,7 @@ public:
 			blink(100);
 			delay(1);
 		}
-		Communicator::webSocket = new WebSocketsServer(80);
+		Communicator::webSocket = new MyWSServer(80);
 		Communicator::webSocket->begin();
 		Communicator::webSocket->onEvent(webSocketEvent);
 
@@ -160,7 +194,7 @@ private:
 
 Rover *myRover;
 Communicator *myCommunicator;
-WebSocketsServer *Communicator::webSocket;
+MyWSServer *Communicator::webSocket;
 String Communicator::inBuffer;
 String Communicator::outBuffer;
 
