@@ -30,7 +30,7 @@ void blink(int d_blink) {
 
 class MyWSServer : public WebSocketsServer {
 public:
-	MyWSServer(uint16_t port) :WebSocketsServer(port) {}
+	MyWSServer(uint16_t port) : WebSocketsServer(port) {}
 	virtual void handleNonWebsocketConnection(WSclient_t * client) override {
 		DEBUG_WEBSOCKETS("[WS-Server][%d][handleHeader] no Websocket connection close.\n", client->num);
 		String resp = "HTTP/1.1 200 OK\r\nServer: arduino-WebSocket-Server\r\nContent-Type: text/html\r\nContent-Length: 10852\r\nKeep-Alive: timeout=5, max=100Connection: Keep-Alive\r\n\r\n";
@@ -39,9 +39,9 @@ public:
 		if (SPIFFS.exists(path)) {
 			File file = SPIFFS.open(path, "r");
 			resp += file.readString();
-			sendContent(resp, client);
+			this->sendContent(resp, client);
 		}
-		clientDisconnect(client);
+		this->clientDisconnect(client);
 	}
 private:
 	void sendContent(const String& content, WSclient_t * _currentClient) {
