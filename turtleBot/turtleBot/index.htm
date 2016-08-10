@@ -1,0 +1,290 @@
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        input[type=range] {
+            -webkit-appearance: none;
+            margin: 10px 0;
+            width: 100%;
+        }
+
+            input[type=range]:focus {
+                outline: none;
+            }
+
+            input[type=range]::-webkit-slider-runnable-track {
+                width: 100%;
+                height: 5px;
+                cursor: pointer;
+                animate: 0.2s;
+                box-shadow: 0px 0px 0px #000000;
+                background: #2497E3;
+                border-radius: 0px;
+                border: 0px solid #000000;
+            }
+
+            input[type=range]::-webkit-slider-thumb {
+                box-shadow: 0px 0px 0px #000000;
+                border: 1px solid #2497E3;
+                height: 31px;
+                width: 31px;
+                border-radius: 29px;
+                background: #FFFFFF;
+                cursor: pointer;
+                -webkit-appearance: none;
+                margin-top: -13.5px;
+            }
+
+            input[type=range]:focus::-webkit-slider-runnable-track {
+                background: #2497E3;
+            }
+
+            input[type=range]::-moz-range-track {
+                width: 100%;
+                height: 5px;
+                cursor: pointer;
+                animate: 0.2s;
+                box-shadow: 0px 0px 0px #000000;
+                background: #2497E3;
+                border-radius: 0px;
+                border: 0px solid #000000;
+            }
+
+            input[type=range]::-moz-range-thumb {
+                box-shadow: 0px 0px 0px #000000;
+                border: 1px solid #2497E3;
+                height: 31px;
+                width: 31px;
+                border-radius: 29px;
+                background: #FFFFFF;
+                cursor: pointer;
+            }
+
+            input[type=range]::-ms-track {
+                width: 100%;
+                height: 5px;
+                cursor: pointer;
+                animate: 0.2s;
+                background: transparent;
+                border-color: transparent;
+                color: transparent;
+            }
+
+            input[type=range]::-ms-thumb {
+                box-shadow: 0px 0px 0px #000000;
+                border: 1px solid #2497E3;
+                height: 31px;
+                width: 31px;
+                border-radius: 29px;
+                background: #FFFFFF;
+                cursor: pointer;
+            }
+
+
+        * {
+            -webkit-box-sizing: border-box;
+            -moz-box-sizing: border-box;
+            box-sizing: border-box;
+        }
+
+        #info a {
+            color: #66F;
+            text-decoration: none;
+        }
+
+            #info a:hover {
+                text-decoration: underline;
+            }
+
+        body {
+            margin: 0.25%;
+        }
+
+        #page {
+            position: relative;
+            overflow: auto;
+            min-width: 100%;
+            min-height: 100%;
+        }
+
+        @media screen and (orientation:landscape) {
+            #joystick {
+                position: absolute;
+                background-color: #444;
+                height: 100%;
+                width: 69.75%;
+                left: 0;
+            }
+
+            #information {
+                position: absolute;
+                background-color: #55A;
+                margin-left: 70%;
+                height: 100%;
+                width: 30%;
+                right: 0;
+            }
+
+            #container {
+                width: 100%;
+                height: 100%;
+                padding: 0;
+                margin: 0;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+            }
+
+            #slider {
+                position: absolute;
+                margin: 0 25% 0 25%;
+                height: 20px;
+                width: 50%;
+                bottom: 25px;
+            }
+
+            .info-box {
+                background-color: #EEC;
+                margin: 1%;
+                width: 98%;
+                padding: 2px;
+            }
+        }
+
+        @media screen and (orientation:portrait) {
+            #joystick {
+                position: absolute;
+                background-color: #444;
+                height: 69.75%;
+                width: 100%;
+                top: 0;
+            }
+
+            #container {
+                width: 100%;
+                height: 100%;
+                padding: 0;
+                margin: 0px;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+            }
+
+            #slider {
+                position: absolute;
+                margin: 0 25% 0 25%;
+                height: 20px;
+                width: 50%;
+                bottom: 25px;
+            }
+
+            #information {
+                position: absolute;
+                background-color: #55A;
+                margin-top: 70%;
+                height: 30%;
+                width: 100%;
+                bottom: 0;
+            }
+
+            .info-box {
+                background-color: #EEC;
+                margin: 1%;
+                width: 98%;
+                padding: 2px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="page">
+        <div id="joystick">
+            <div id="container"></div>
+            <div id="slider">
+                <input type="range" id="rotation" value="100" max="200" min="0" />
+            </div>
+        </div>
+        <div id="information">
+            <div class="info-box">
+                <span id="result"></span>
+            </div>
+            <div class="info-box">
+                <b>Response: </b>
+                <span id="serverRaw"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+			var VirtualJoystick=function(a){a=a||{},this._container=a.container||document.body,this._strokeStyle=a.strokeStyle||"cyan",this._stickEl=a.stickElement||this._buildJoystickStick(),this._baseEl=a.baseElement||this._buildJoystickBase(),this._mouseSupport=void 0!==a.mouseSupport&&a.mouseSupport,this._stationaryBase=a.stationaryBase||!1,this._baseX=this._stickX=a.baseX||0,this._baseY=this._stickY=a.baseY||0,this._limitStickTravel=a.limitStickTravel||!1,this._stickRadius=void 0!==a.stickRadius?a.stickRadius:100,this._useCssTransform=void 0!==a.useCssTransform&&a.useCssTransform,this._container.style.position="relative",this._container.appendChild(this._baseEl),this._baseEl.style.position="absolute",this._baseEl.style.display="none",this._container.appendChild(this._stickEl),this._stickEl.style.position="absolute",this._stickEl.style.display="none",this._pressed=!1,this._touchIdx=null,this._stationaryBase===!0&&(this._baseEl.style.display="",this._baseEl.style.left=this._baseX-this._baseEl.width/2+"px",this._baseEl.style.top=this._baseY-this._baseEl.height/2+"px"),this._transform=!!this._useCssTransform&&this._getTransformProperty(),this._has3d=this._check3D();var b=function(a,b){return function(){return a.apply(b,arguments)}};this._$onTouchStart=b(this._onTouchStart,this),this._$onTouchEnd=b(this._onTouchEnd,this),this._$onTouchMove=b(this._onTouchMove,this),this._container.addEventListener("touchstart",this._$onTouchStart,!1),this._container.addEventListener("touchend",this._$onTouchEnd,!1),this._container.addEventListener("touchmove",this._$onTouchMove,!1),this._mouseSupport&&(this._$onMouseDown=b(this._onMouseDown,this),this._$onMouseUp=b(this._onMouseUp,this),this._$onMouseMove=b(this._onMouseMove,this),this._container.addEventListener("mousedown",this._$onMouseDown,!1),this._container.addEventListener("mouseup",this._$onMouseUp,!1),this._container.addEventListener("mousemove",this._$onMouseMove,!1))};VirtualJoystick.prototype.destroy=function(){this._container.removeChild(this._baseEl),this._container.removeChild(this._stickEl),this._container.removeEventListener("touchstart",this._$onTouchStart,!1),this._container.removeEventListener("touchend",this._$onTouchEnd,!1),this._container.removeEventListener("touchmove",this._$onTouchMove,!1),this._mouseSupport&&(this._container.removeEventListener("mouseup",this._$onMouseUp,!1),this._container.removeEventListener("mousedown",this._$onMouseDown,!1),this._container.removeEventListener("mousemove",this._$onMouseMove,!1))},VirtualJoystick.touchScreenAvailable=function(){return"createTouch"in document},function(a){a.addEventListener=function(a,b){return void 0===this._events&&(this._events={}),this._events[a]=this._events[a]||[],this._events[a].push(b),b},a.removeEventListener=function(a,b){void 0===this._events&&(this._events={}),a in this._events!=!1&&this._events[a].splice(this._events[a].indexOf(b),1)},a.dispatchEvent=function(a){if(void 0===this._events&&(this._events={}),void 0!==this._events[a])for(var b=this._events[a].slice(),c=0;c<b.length;c++){var d=b[c].apply(this,Array.prototype.slice.call(arguments,1));if(void 0!==d)return d}}}(VirtualJoystick.prototype),VirtualJoystick.prototype.deltaX=function(){return this._stickX-this._baseX},VirtualJoystick.prototype.deltaY=function(){return this._stickY-this._baseY},VirtualJoystick.prototype.up=function(){if(this._pressed===!1)return!1;var a=this.deltaX(),b=this.deltaY();return!(b>=0)&&!(Math.abs(a)>2*Math.abs(b))},VirtualJoystick.prototype.down=function(){if(this._pressed===!1)return!1;var a=this.deltaX(),b=this.deltaY();return!(b<=0)&&!(Math.abs(a)>2*Math.abs(b))},VirtualJoystick.prototype.right=function(){if(this._pressed===!1)return!1;var a=this.deltaX(),b=this.deltaY();return!(a<=0)&&!(Math.abs(b)>2*Math.abs(a))},VirtualJoystick.prototype.left=function(){if(this._pressed===!1)return!1;var a=this.deltaX(),b=this.deltaY();return!(a>=0)&&!(Math.abs(b)>2*Math.abs(a))},VirtualJoystick.prototype._onUp=function(){this._pressed=!1,this._stickEl.style.display="none",0==this._stationaryBase&&(this._baseEl.style.display="none",this._baseX=this._baseY=0,this._stickX=this._stickY=0)},VirtualJoystick.prototype._onDown=function(a,b){if(this._pressed=!0,0==this._stationaryBase&&(this._baseX=a,this._baseY=b,this._baseEl.style.display="",this._move(this._baseEl.style,this._baseX-this._baseEl.width/2,this._baseY-this._baseEl.height/2)),this._stickX=a,this._stickY=b,this._limitStickTravel===!0){var c=this.deltaX(),d=this.deltaY(),e=Math.sqrt(c*c+d*d);if(e>this._stickRadius){var f=c/e,g=d/e;this._stickX=f*this._stickRadius+this._baseX,this._stickY=g*this._stickRadius+this._baseY}}this._stickEl.style.display="",this._move(this._stickEl.style,this._stickX-this._stickEl.width/2,this._stickY-this._stickEl.height/2)},VirtualJoystick.prototype._onMove=function(a,b){if(this._pressed===!0){if(this._stickX=a,this._stickY=b,this._limitStickTravel===!0){var c=this.deltaX(),d=this.deltaY(),e=Math.sqrt(c*c+d*d);if(e>this._stickRadius){var f=c/e,g=d/e;this._stickX=f*this._stickRadius+this._baseX,this._stickY=g*this._stickRadius+this._baseY}}this._move(this._stickEl.style,this._stickX-this._stickEl.width/2,this._stickY-this._stickEl.height/2)}},VirtualJoystick.prototype._onMouseUp=function(a){return this._onUp()},VirtualJoystick.prototype._onMouseDown=function(a){a.preventDefault();var b=a.clientX,c=a.clientY;return this._onDown(b,c)},VirtualJoystick.prototype._onMouseMove=function(a){var b=a.clientX,c=a.clientY;return this._onMove(b,c)},VirtualJoystick.prototype._onTouchStart=function(a){if(null===this._touchIdx){var b=this.dispatchEvent("touchStartValidation",a);if(b!==!1){this.dispatchEvent("touchStart",a),a.preventDefault();var c=a.changedTouches[0];this._touchIdx=c.identifier;var d=c.pageX,e=c.pageY;return this._onDown(d,e)}}},VirtualJoystick.prototype._onTouchEnd=function(a){if(null!==this._touchIdx){this.dispatchEvent("touchEnd",a);for(var b=a.changedTouches,c=0;c<b.length&&b[c].identifier!==this._touchIdx;c++);if(c!==b.length)return this._touchIdx=null,a.preventDefault(),this._onUp()}},VirtualJoystick.prototype._onTouchMove=function(a){if(null!==this._touchIdx){for(var b=a.changedTouches,c=0;c<b.length&&b[c].identifier!==this._touchIdx;c++);if(c!==b.length){var d=b[c];a.preventDefault();var e=d.pageX,f=d.pageY;return this._onMove(e,f)}}},VirtualJoystick.prototype._buildJoystickBase=function(){var a=document.createElement("canvas");a.width=126,a.height=126;var b=a.getContext("2d");return b.beginPath(),b.strokeStyle=this._strokeStyle,b.lineWidth=6,b.arc(a.width/2,a.width/2,40,0,2*Math.PI,!0),b.stroke(),b.beginPath(),b.strokeStyle=this._strokeStyle,b.lineWidth=2,b.arc(a.width/2,a.width/2,60,0,2*Math.PI,!0),b.stroke(),a},VirtualJoystick.prototype._buildJoystickStick=function(){var a=document.createElement("canvas");a.width=86,a.height=86;var b=a.getContext("2d");return b.beginPath(),b.strokeStyle=this._strokeStyle,b.lineWidth=6,b.arc(a.width/2,a.width/2,40,0,2*Math.PI,!0),b.stroke(),a},VirtualJoystick.prototype._move=function(a,b,c){this._transform?this._has3d?a[this._transform]="translate3d("+b+"px,"+c+"px, 0)":a[this._transform]="translate("+b+"px,"+c+"px)":(a.left=b+"px",a.top=c+"px")},VirtualJoystick.prototype._getTransformProperty=function(){for(var c,a=["webkitTransform","MozTransform","msTransform","OTransform","transform"],b=document.createElement("p"),d=0;d<a.length;d++)if(c=a[d],null!=b.style[c])return c},VirtualJoystick.prototype._check3D=function(){var a=this._getTransformProperty();if(!a||!window.getComputedStyle)return module.exports=!1;var b={webkitTransform:"-webkit-transform",OTransform:"-o-transform",msTransform:"-ms-transform",MozTransform:"-moz-transform",transform:"transform"},c=document.createElement("div");c.style[a]="translate3d(1px,1px,1px)",document.body.insertBefore(c,null);var d=getComputedStyle(c).getPropertyValue(b[a]);document.body.removeChild(c);var e=null!=d&&d.length&&"none"!=d;return e};
+			var connection = new WebSocket('ws://192.168.8.100:80/', ['arduino']);
+
+			connection.onopen = function () {
+				connection.send('Message from Browser to ESP8266 yay its Working!! ' + new Date());
+				connection.send('ping');
+				connection.send('Time: ' + new Date());
+			};
+
+			connection.onerror = function (error) {
+				console.log('WebSocket Error ', error);
+			};
+
+			connection.onmessage = function (e) {
+				document.getElementById('serverRaw').innerHTML=e.data;
+				console.log('Server: ', e.data);
+				connection.send('Time: ' + new Date());
+			};
+
+			console.log("touchscreen is", VirtualJoystick.touchScreenAvailable() ? "available" : "not available");
+
+			var joystick	= new VirtualJoystick({
+				container	: document.getElementById('container'),
+				strokeStyle : 'white',
+				stationaryBase : false,
+				stickRadius : 100,
+				mouseSupport	: true,
+				limitStickTravel: true,
+				useCssTransform : false,
+			});
+
+			joystick.addEventListener('touchStart', function(){
+				console.log('down')
+			});
+
+			joystick.addEventListener('touchEnd', function(){
+				console.log('up')
+			});
+
+			setInterval(function(){
+				var outputEl	= document.getElementById('result');
+				var d = ' dx:'+Math.round(joystick.deltaX())
+					+ ' dy:'+Math.round(joystick.deltaY())
+					+ (joystick.right()	? ' right'	: '')
+					+ (joystick.up()	? ' up'		: '')
+					+ (joystick.left()	? ' left'	: '')
+					+ (joystick.down()	? ' down' 	: '')
+					+ ' Camera angle: ' + Math.round(-90+(document.getElementById('rotation').value)*180/200) + ' deg'
+					;
+				outputEl.innerHTML	= '<b>Result:</b> ' + d;
+			}, 1/30 * 1000);
+
+			setInterval(function(){
+				/*
+				 * All values are mapped to [20,120] range.
+				 */
+				var flags='0000000';
+				var d = 'x:'+Math.round(joystick.deltaX()/2+50)
+					+ 'y:'+Math.round(joystick.deltaY()/2+50)
+					+ 'z:'+Math.round(document.getElementById('rotation').value/2);
+				var e = "\n" + String.fromCharCode(Math.round(joystick.deltaX()/2+70))
+					+ String.fromCharCode(Math.round(joystick.deltaY()/2+70))
+					+ String.fromCharCode(Math.round(parseInt(document.getElementById('rotation').value)/2+20))
+					+ String.fromCharCode(parseInt( flags, 2 ))
+					+ "\n";
+				if(connection.readyState==1){
+					connection.send(e);
+					//console.log('Sent -> Raw:' + d + ' Encoded:' + e);
+				}
+			}, 1/30 * 10000);
+    </script>
+</body>
+</html>
