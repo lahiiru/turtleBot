@@ -2,10 +2,8 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h> 
 #include <WebSocketsServer.h>
-#include <ESP8266WiFiMulti.h>
-#include <DNSServer.h>
-#include <ESP8266mDNS.h>
-#include <EEPROM.h>
+//#include <ESP8266WiFiMulti.h>
+//#include <EEPROM.h>
 #include <Servo.h>
 #include <Math.h>
 
@@ -39,6 +37,11 @@ unsigned long t_blink;
 bool s_blink;
 String inString = "";
 byte parse_i = 0;
+bool WS_MODE = true;
+long t = 0;
+int t_c = 0;
+bool T_RX = true;
+bool T_TX = false;
 
 void blink(int d_blink) {
 	if (millis() - t_blink > d_blink) {
@@ -51,26 +54,29 @@ void blink(int d_blink) {
 class AIOServer : public WebSocketsServer {
 public:
 	AIOServer(uint16_t port) :WebSocketsServer(port) {
-		softAP_ssid = "ESP_ap";
+		softAP_ssid = "TurtleBot";
 		softAP_password = "12345678";
 		apIP = IPAddress(192, 168, 4, 1);
 		netMsk = IPAddress(255, 255, 255, 0);
 
 	}
 	void init() {
-		DEBUG_SERIAL.print("Configuring access point...");
+		DEBUG_SERIAL.print("Configuring access point....");
 		/* You can remove the password parameter if you want the AP to be open. */
 		WiFi.softAPConfig(apIP, apIP, netMsk);
 		WiFi.softAP(softAP_ssid, softAP_password);
 		delay(500); // Without delay I've seen the IP address blank
 		DEBUG_SERIAL.print("AP IP address: ");
 		DEBUG_SERIAL.println(WiFi.softAPIP());
-		EEPROM.begin(sizeof(config));
-		/* Setup the DNS server redirecting all the domains to the apIP */
-		//dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
-		//dnsServer.start(DNS_PORT, "*", apIP);
-		updateParentConnection();
+			//EEPROM.begin(sizeof(config));
+			/* Setup the DNS server redirecting all the domains to the apIP */
+			//dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+			//dnsServer.start(DNS_PORT, "*", apIP);
+		//updateParentConnection();
 
+	}
+	void wsSend(String str) {
+		sendTXT(0, str);
 	}
 	void updateParentConnection() {
 		DEBUG_SERIAL.println("Loading credentials...");
@@ -80,9 +86,18 @@ public:
 	void processRequest() {
 		loop();
 		//dnsServer.processNextRequest();
-		processParentConnection();
+		if (!WS_MODE) {
+			
+			processParentConnection();
+		}
+
 	}
 	virtual void handleNonWebsocketConnection(WSclient_t * client) override {
+		if (WS_MODE && client->cUrl!="/wifi") {
+			DEBUG_SERIAL.println("Rejecting client!");
+			clientDisconnect(client);
+			return;
+		}
 		cWebClient = client;
 		String url = cWebClient->cUrl;
 		DEBUG_SERIAL.println("New web client detected.");
@@ -92,12 +107,14 @@ public:
 			handleRoot();
 		}
 		else if (url.startsWith("/remote")) {
+			WS_MODE = true;
 			handleRemote();
 		}
 		else if (url.startsWith("/wifisave")) {
 			handleWifiSave();
 		}
 		else if (url.startsWith("/wifi")) {
+			WS_MODE = false;
 			handleWifi();
 		}
 		else if (url.startsWith("/generate_204")) {
@@ -109,7 +126,7 @@ public:
 		else {
 			handleNotFound();
 		}
-
+		clientDisconnect(cWebClient);
 	}
 	void sendHeader(const String& name, const String& value) {
 		sendHeader(name, value, false);
@@ -141,8 +158,8 @@ private:
 	SvrSettings config;
 	const char *softAP_ssid;
 	const char *softAP_password;
-	const byte DNS_PORT = 53;
-	DNSServer dnsServer;
+	//const byte DNS_PORT = 53;
+	//DNSServer dnsServer;
 	IPAddress apIP;
 	IPAddress netMsk;
 	boolean connect;
@@ -185,7 +202,7 @@ private:
 					Serial.println(config.ssid);
 					Serial.print("IP address: ");
 					Serial.println(WiFi.localIP());
-
+					/*
 					// Setup MDNS responder
 					if (!MDNS.begin("remote.local")) {
 						Serial.println("Error setting up MDNS responder!");
@@ -195,6 +212,7 @@ private:
 						// Add service to MDNS-SD
 						MDNS.addService("http", "tcp", 80);
 					}
+					*/
 				}
 				else if (s == WL_NO_SSID_AVAIL) {
 					WiFi.disconnect();
@@ -230,7 +248,7 @@ private:
 			content_type = "text/html";
 
 		sendHeader("Content-Type", content_type, true);
-		if (contentLength>0)
+		if (contentLength > 0)
 			sendHeader("Content-Length", String(contentLength));
 		sendHeader("Connection", "close");
 		sendHeader("Access-Control-Allow-Origin", "*");
@@ -316,10 +334,12 @@ private:
 
 	String parseArgs(String arg) {
 		String url = cWebClient->cUrl;
-		if (url.indexOf("?") == -1) return "";
+		if (url.indexOf("?") == -1)
+			return "";
 		String params = url.substring(url.indexOf("?") + 1, url.indexOf(" HTTP"));
 		int i = params.indexOf(arg);
-		if (i == -1) return "";
+		if (i == -1)
+			return "";
 		params = params.substring(i + 1);
 		i = params.indexOf("&");
 		DEBUG_SERIAL.print("Parsed arg: ");
@@ -342,7 +362,8 @@ private:
 		while (1) {
 			String req = cWebClient->tcp->readStringUntil('\r');
 			cWebClient->tcp->readStringUntil('\n');
-			if (req == "") break;//no moar headers
+			if (req == "")
+				break;//no moar headers
 			int headerDiv = req.indexOf(':');
 			if (headerDiv == -1) {
 				break;
@@ -373,11 +394,11 @@ private:
 		if (SPIFFS.exists(path)) {
 			File file = SPIFFS.open(path, "r");
 			String resp = file.readString();
+			resp.replace("192.168.4.1", cWebClient->tcp->localIP().toString());
 			sendContent(resp);
 		}
 
 		cWebClient->tcp->stop();
-		clientDisconnect(cWebClient);
 	}
 	/** Redirect to captive portal if we got a request for another domain. Return true in that case so the page handler do not try to handle the request again. */
 	boolean captivePortal() {
@@ -464,14 +485,16 @@ private:
 		//EEPROM.end();
 		DEBUG_SERIAL.println("Recovered credentials:");
 		DEBUG_SERIAL.println(config.ssid);
-		DEBUG_SERIAL.println(config.password.length()>0 ? "********" : "<no password>");
+		DEBUG_SERIAL.println(config.password.length() > 0 ? "********" : "<no password>");
 	}
 	/** Store WLAN credentials to EEPROM */
 	void saveCredentials() {
 		DEBUG_SERIAL.printf("Saving credentials, %s:%s\n", config.ssid.c_str(), config.password.c_str());
+		/*
 		EEPROM.put(0, config);
 		EEPROM.commit();
 		EEPROM.end();
+		*/
 	}
 	/** Handle the WLAN save form and redirect to WLAN config page again */
 	void handleWifiSave() {
@@ -525,8 +548,8 @@ private:
 
 class Communicator {
 private:
-	const char* host = "remote";
-	ESP8266WiFiMulti WiFiMulti;
+	//const char* host = "remote";
+	//ESP8266WiFiMulti WiFiMulti;
 	static AIOServer* webSocket;
 public:
 	IPAddress myIP;
@@ -536,14 +559,17 @@ public:
 		switch (type) {
 		case WStype_DISCONNECTED:
 			DEBUG_SERIAL.printf("[%u] Disconnected!\n", num);
+			WS_MODE = false;
 			break;
 		case WStype_CONNECTED:
 		{
+
 			IPAddress ip = { 192,168,4,104 };//webSocket.remoteIP(num);
 			DEBUG_SERIAL.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
 
 			// send message to client
 			Communicator::webSocket->sendTXT(num, "Connected");
+			WS_MODE = true;
 		}
 		break;
 		case WStype_TEXT:
@@ -551,7 +577,7 @@ public:
 			Communicator::inBuffer = String((char *)payload);
 			// send message to client
 			// webSocket.sendTXT(num, "message here");
-
+			// Communicator::webSocket->sendTXT(num, "Connected");
 			// send data to all connected clients
 			// this->webSocket.broadcastTXT("message here");
 			break;
@@ -592,14 +618,38 @@ public:
 		DEBUG_SERIAL.println("Communicator initialised.");
 		return WL_CONNECTED;
 	}
-	void processCommunication() {
-		if (Communicator::outBuffer.length()>0) {
-			DEBUG_SERIAL.println("Pushing from buffer...");
-			Communicator::webSocket->broadcastTXT(Communicator::outBuffer);
-			Communicator::outBuffer = "";
+	void send(String str) {
+		send(str, true);
+	}
+
+	void send(String str, bool override) {
+		if (override) {
+			Communicator::outBuffer = String(str);
 		}
+		else {
+			Communicator::outBuffer += String(str);
+		}
+
+	}
+	String receive() {
+		String in = Communicator::inBuffer;
+		Communicator::inBuffer = "";
+		return in;
+	}
+	int toRead() {
+		return Communicator::inBuffer.length();
+	}
+	void RX() {
 		Communicator::webSocket->processRequest();
 	}
+	void TX() {
+		if (Communicator::outBuffer.length() > 0) {
+			Communicator::webSocket->wsSend(Communicator::outBuffer);
+			//DEBUG_SERIAL.printf("Sending str: %s\n", Communicator::outBuffer.c_str());
+			Communicator::outBuffer = "";
+		}
+	}
+	
 };
 
 
@@ -621,13 +671,16 @@ public:
 		speed_c = speed;
 		this->drive();
 	}
-	void steer(int radius) {
-		this->z = radius / COMPASS_FACTOR * 2;
+	void steer(float radius) {
+		this->z = radius; // COMPASS_FACTOR * 2;
 		this->drive();
 	}
 	void printWheels() {
 		DEBUG_SERIAL.println("Wheel speeds,");
-		DEBUG_SERIAL.printf("{%i}={%i}.\n", left_c, right_c);
+		DEBUG_SERIAL.printf("{%i}={%i}. z=", left_c, right_c); DEBUG_SERIAL.println(z);
+	}
+	void sendRoverParams(Communicator* com) {
+		com->send(String(left_c) + ":" + String(right_c));
 	}
 private:
 	Servo servol;
@@ -641,11 +694,11 @@ private:
 		if (_z < 0) { // turning left
 			_z = _z*-1;
 			right_c = speed_c;
-			left_c = (_z<max_radius / COMPASS_FACTOR * 2) ? (int)(right_c * (_z - 0.5) / (_z + 0.5)) : speed_c;
+			left_c = (_z < 1000) ? (int)(right_c * (_z - 0.5) / (_z + 0.5)) : speed_c;
 		}
 		else {  // turning right
 			left_c = speed_c;
-			right_c = (_z<max_radius / COMPASS_FACTOR * 2) ? (int)(left_c * (_z - 0.5) / (_z + 0.5)) : speed_c;
+			right_c = (_z < 1000) ? (int)(left_c * (_z - 0.5) / (_z + 0.5)) : speed_c;
 		}
 		servol.write(7 + map(left_c, -1 * max_speed, max_speed, 0, 180));
 		servor.write(180 + 5 - map(right_c, -1 * max_speed, max_speed, 0, 180));
@@ -658,16 +711,35 @@ AIOServer *Communicator::webSocket;
 String Communicator::inBuffer;
 String Communicator::outBuffer;
 
-void exec(int z, int s) {
+void exec(float z, int s) {
 	myRover->steer(z);
 	myRover->accelerate(s);
 	myRover->printWheels();
 }
 
+void scheduler() {
+	if (millis() - t > 50) {
+		if (t_c >= 4) {
+			t_c = 0;
+		}
+		else {
+			t_c += 1;
+		}
+		switch (t_c) {
+		case 0:myCommunicator->RX(); break;
+		case 1:myCommunicator->RX(); break;
+		case 2:myCommunicator->RX(); break;
+		case 3:myCommunicator->TX(); break;
+		case 4:/* resting */break;
+		}
+		t = millis();
+	}
+}
+
 void parseInBuffer() {
-	if (Communicator::inBuffer.length()>0) {
-		String in = Communicator::inBuffer;
-		Communicator::inBuffer = "";
+	if (myCommunicator->toRead()>0) {
+		String in = myCommunicator->receive();
+		//DEBUG_SERIAL.printf("Recieved str: %s\n", in.c_str());
 		char* c = new char[6];
 		in.toCharArray(c, 6);
 		// x=r.cos(A), y=r.sin(A), r=50 (as javascript gives max r=100)
@@ -690,7 +762,7 @@ void parseInBuffer() {
 		DEBUG_SERIAL.println(A);
 		DEBUG_SERIAL.println((int)z*x_sign);
 		DEBUG_SERIAL.println("wheel values,");
-		exec((int)z*x_sign, speed_c*y_sign);
+		exec(m*x_sign, speed_c*y_sign);
 		DEBUG_SERIAL.println("parsed.");
 		DEBUG_SERIAL.println((int)(c[1] - 70) * 2);
 		DEBUG_SERIAL.println((int)(c[2] - 70) * 2);
@@ -713,7 +785,7 @@ void processSerial() {
 			DEBUG_SERIAL.print("Value:");
 			DEBUG_SERIAL.println(inString.toInt());
 			exec(inString.toInt(), max_speed);
-			Communicator::outBuffer = inString;
+			myCommunicator->send(inString);
 			// clear the string for new input:
 			inString = "";
 		}
@@ -724,7 +796,12 @@ void setup() {
 	pinMode(pin_led, OUTPUT);
 	pinMode(pin_left_servo, OUTPUT);
 	pinMode(pin_right_servo, OUTPUT);
+
+	DEBUG_SERIAL.setDebugOutput(true);
 	DEBUG_SERIAL.begin(115200);
+
+
+	
 	SPIFFS.begin();
 	{
 		Dir dir = SPIFFS.openDir("/");
@@ -735,12 +812,14 @@ void setup() {
 	myCommunicator = new Communicator();
 	DEBUG_SERIAL.println("Stariting communicator...");
 	uint8_t s = myCommunicator->init();
+	
+	/*
 	if (s != WL_CONNECTED) {
 		DEBUG_SERIAL.println(s);
 		DEBUG_SERIAL.println("Couldn't connect. Will restart after 1 min.");
 		unsigned long t = millis();
 		while (true)
-		{
+		{myRover
 			blink(100);             // quick blinks to indicate the error
 			if (millis() - t > 600000) {
 				ESP.restart();          // restart the CPU after 60 seconds
@@ -748,17 +827,21 @@ void setup() {
 
 		}
 	}
-
+	*/
+	
 	DEBUG_SERIAL.println("Communicater started.");
 
 	myRover = new Rover();
 	myRover->accelerate(0);
 }
-
+ 
 void loop() {
 	blink(1000);
+	//WiFi.disconnect();
+	//DEBUG_SERIAL.println(WiFi.status());
 	processSerial();
-	myCommunicator->processCommunication();
+	scheduler();
 	parseInBuffer();
+	myRover->sendRoverParams(myCommunicator);
 	delay(10);              // wait for a second
 }
